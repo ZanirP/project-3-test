@@ -1,0 +1,25 @@
+name: format
+on:
+    pull_request:
+    push:
+        branches:
+            - main
+permissions:
+    contents: read
+jobs:
+    prettier:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout Repository
+              uses: actions/checkout@v5
+
+            - name: Setup Node.js
+              uses: actions/setup-node@v6
+              with:
+                  node-version: 24
+
+            - name: Install Dependencies
+              run: npm ci
+
+            - name: Run Prettier.js
+              run: npx prettier . --check

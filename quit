@@ -1,0 +1,17 @@
+[1mdiff --git a/app/customerOrderTest/page.tsx b/app/customerOrderTest/page.tsx[m
+[1mindex 2dfe6bd..ecaa5fb 100644[m
+[1m--- a/app/customerOrderTest/page.tsx[m
+[1m+++ b/app/customerOrderTest/page.tsx[m
+[36m@@ -535,7 +535,11 @@[m [mconst iceToPercentage = (servings: number): string => {[m
+     return mapping[servings] || "0%";[m
+ };[m
+ [m
+[31m-function MenuItemCard({ item, onConfirm }: MenuItemCardProps) {[m
+[32m+[m[32mfunction MenuItemCard({[m
+[32m+[m[32m    item,[m
+[32m+[m[32m    onConfirm,[m
+[32m+[m[32m    addToOrderLabel,[m
+[32m+[m[32m}: MenuItemCardProps) {[m
+     const [open, setOpen] = useState(false);[m
+     const [ice, setIce] = useState(4); // Default to 100% (4 servings)[m
+     const [size, setSize] = useState<DrinkSize>("medium");[m
