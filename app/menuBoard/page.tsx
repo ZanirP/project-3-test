@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import TopNav from "@/components/TopNav";
 import { CupSoda } from "lucide-react";
 import { MenuItem, Category } from "@/lib/models";
@@ -20,31 +20,30 @@ const CATEGORY_ORDER = [
     "Uncategorized",
 ] as const;
 
+type CategoryName = (typeof CATEGORY_ORDER)[number];
+
 function CategoryPills({
     categories,
     selected,
-    onSelect,
 }: {
-    categories: string[];
-    selected: string;
-    onSelect: (c: string) => void;
+    categories: CategoryName[];
+    selected: CategoryName;
 }) {
     return (
         <div className="flex gap-3 overflow-x-auto pb-2 px-1">
             {categories.map((c) => (
-                <button
+                <div
                     key={c}
-                    onClick={() => onSelect(c)}
                     className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold border
-            transition-all
-            ${
-                selected === c
-                    ? "bg-[#9d8189] text-white border-transparent shadow-md"
-                    : "bg-white/70 text-[#4d4a55] border-[#e5c2cf] hover:bg-[#ffe5f1]"
-            }`}
+                        transition-all cursor-default
+                        ${
+                            selected === c
+                                ? "bg-[#9d8189] text-white border-transparent shadow-md"
+                                : "bg-white/70 text-[#4d4a55] border-[#e5c2cf]"
+                        }`}
                 >
                     {c}
-                </button>
+                </div>
             ))}
         </div>
     );
@@ -73,14 +72,13 @@ function DrinkCard({ item }: { item: MenuItem }) {
             </div>
             <div className="px-4 py-3 flex items-center justify-between text-sm text-[#6d6875]">
                 <span>Signature Drink</span>
-                {/* you can later use stock to show "Sold Out" etc */}
             </div>
         </div>
     );
 }
 
 export default function MenuBoardPage() {
-    const [selectedCategory, setSelectedCategory] = useState<string>(
+    const [selectedCategory, setSelectedCategory] = useState<CategoryName>(
         CATEGORY_ORDER[0],
     );
 
@@ -91,7 +89,6 @@ export default function MenuBoardPage() {
         try {
             setMenuDataReady(false);
             setMenuData({});
-            let menuTempData: MenuData = {};
             console.log("loading menu");
             const catRes = await fetch("/api/cashier/categories", {
                 method: "GET",
@@ -137,12 +134,34 @@ export default function MenuBoardPage() {
         loadMenuData();
     }, []);
 
+    // Only show categories that actually have items, in the fixed order
+    const categories = useMemo<CategoryName[]>(
+        () =>
+            CATEGORY_ORDER.filter(
+                (c) => menuData[c] && menuData[c].length > 0,
+            ) as CategoryName[],
+        [menuData],
+    );
+
+    // Auto-rotate categories every 8 seconds once data is ready
+    useEffect(() => {
+        if (!menuDataReady || categories.length === 0) return;
+
+        const interval = setInterval(() => {
+            setSelectedCategory((prev) => {
+                const idx = categories.indexOf(prev);
+                const nextIdx = idx === -1 ? 0 : (idx + 1) % categories.length;
+                return categories[nextIdx];
+            });
+        }, 5000); // 5 seconds per category
+
+        return () => clearInterval(interval);
+    }, [menuDataReady, categories]);
+
     const drinksToShow = menuData[selectedCategory] ?? [];
-    const categories = CATEGORY_ORDER.filter((c) => menuData[c]);
 
     return (
         <div className="min-h-screen bg-[#ffddd233] dark:bg-black font-sans flex flex-col">
-            {/* Top nav – similar vibe to cashier/kiosk */}
             <TopNav subtitle="Menu Board" />
 
             <main className="flex-1 px-6 py-4 flex flex-col">
@@ -159,21 +178,12 @@ export default function MenuBoardPage() {
                         </div>
                     </div>
 
-                    {/* Category pills */}
-                    {menuDataReady ? (
+                    {/* Category pills (non-interactive) */}
+                    {menuDataReady && categories.length > 0 && (
                         <div className="mt-2">
                             <CategoryPills
                                 categories={categories}
                                 selected={selectedCategory}
-                                onSelect={setSelectedCategory}
-                            />
-                        </div>
-                    ) : (
-                        <div className="mt-2">
-                            <CategoryPills
-                                categories={["loading"]}
-                                selected={"string"}
-                                onSelect={() => {}}
                             />
                         </div>
                     )}

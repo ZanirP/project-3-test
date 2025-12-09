@@ -19,12 +19,23 @@ export async function GET() {
  */
 export async function POST(req: Request) {
     const b = await req.json();
-    const { name, stock, cost } = b;
+    const { name, stock, cost, groupName } = b;
 
     // Run validation on inputted values
     if (!name || name.trim() === "" || typeof name !== "string") {
         return NextResponse.json(
             { error: "Name is required." },
+            { status: 400 },
+        );
+    }
+
+    if (
+        !groupName ||
+        groupName.trim() === "" ||
+        typeof groupName !== "string"
+    ) {
+        return NextResponse.json(
+            { error: "Group Name is required." },
             { status: 400 },
         );
     }
@@ -44,6 +55,7 @@ export async function POST(req: Request) {
         name,
         stock,
         cost,
+        groupName,
     );
 
     return NextResponse.json(rows[0], { status: 201 });
@@ -85,7 +97,7 @@ export async function DELETE(req: Request) {
 export async function PUT(req: Request) {
     try {
         const b = await req.json();
-        const { id, name, stock, cost } = b;
+        const { id, name, stock, cost, groupName } = b;
 
         const idNum = Number(id);
 
@@ -93,6 +105,17 @@ export async function PUT(req: Request) {
         if (!name || name.trim() === "" || typeof name !== "string") {
             return NextResponse.json(
                 { error: "Name is required." },
+                { status: 400 },
+            );
+        }
+
+        if (
+            !groupName ||
+            groupName.trim() === "" ||
+            typeof groupName !== "string"
+        ) {
+            return NextResponse.json(
+                { error: "Group Name is required." },
                 { status: 400 },
             );
         }
@@ -126,6 +149,7 @@ export async function PUT(req: Request) {
             name,
             stockNum,
             costNum,
+            groupName,
         );
         return NextResponse.json(row, { status: 200 });
     } catch (e: any) {

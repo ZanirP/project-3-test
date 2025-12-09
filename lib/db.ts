@@ -44,7 +44,7 @@ export async function ensureConnected() {
  */
 export async function fetch_all_menu_items(): Promise<MenuItem[]> {
     await ensureConnected();
-    const result = await client.query<MenuItem>("SELECT * FROM menu");
+    const result = await client.query<MenuItem>("SELECT * FROM menu WHERE is_active=TRUE");
     return result.rows;
 }
 
@@ -76,7 +76,7 @@ export async function populate_menu_management_table(): Promise<MenuItem[]> {
     const { rows } = await client.query<MenuItem>(
         `
     SELECT id, name, category_id, stock, cost::float8 AS cost
-    FROM menu
+    FROM menu WHERE is_active=TRUE
     ORDER BY id
     `,
     );
@@ -133,7 +133,7 @@ export async function delete_from_menu_management_table(
     await ensureConnected();
     const { rows, rowCount } = await client.query<{ id: number }>(
         `
-    DELETE FROM menu
+    UPDATE menu SET is_active=False
     WHERE id = $1
     RETURNING id
     `,
@@ -156,7 +156,7 @@ export async function populate_ingredient_management_table(): Promise<
     const { rows } = await client.query<Ingredient>(
         `
     SELECT id, name, stock, cost::float8 AS cost, ingredient_type, ingredient_group
-    FROM ingredients
+    FROM ingredients WHERE is_active=TRUE
     ORDER BY id
     `,
     );
@@ -189,15 +189,16 @@ export async function insert_into_ingredient_management_table(
     name: string,
     stock: number,
     cost: number,
+    groupName: string,
 ): Promise<Ingredient[]> {
     await ensureConnected();
     const { rows } = await client.query<Ingredient>(
         `
-    INSERT INTO ingredients (name, stock, cost)
-    VALUES ($1, $2, $3)
-    RETURNING id, name, stock, cost::float8 AS cost
+    INSERT INTO ingredients (name, stock, cost, ingredient_group)
+    VALUES ($1, $2, $3, $4)
+    RETURNING id, name, stock, cost::float8 AS cost, ingredient_group
     `,
-        [name, stock ?? 0, cost ?? 0],
+        [name, stock ?? 0, cost ?? 0, groupName ?? "Toppings"],
     );
     return rows;
 }
@@ -242,6 +243,7 @@ export async function insert_into_drinks_ingredients_table(
 
 /**
  * Decrement ingredient stock safely (parameterized).
+ * Throws an error if stock is insufficient.
  */
 export async function update_ingredient_inventory(
     amount: number,
@@ -249,16 +251,22 @@ export async function update_ingredient_inventory(
 ): Promise<void> {
     console.log(`id: ${ingredient_id} : num: ${amount}`);
     await ensureConnected();
-    await client.query(
+
+    const result = await client.query(
         `
-    UPDATE ingredients
-    SET stock = stock - $1
-    WHERE id = $2
-    `,
+        UPDATE ingredients
+        SET stock = stock - $1
+        WHERE id = $2 AND stock >= $1
+        `,
         [amount, ingredient_id],
     );
-}
 
+    if (result.rowCount === 0) {
+        throw new Error(
+            `Insufficient stock for ingredient ID ${ingredient_id}. Requested: ${amount}`,
+        );
+    }
+}
 /**
  * Delete an ingredient by id and return the deleted id.
  */
@@ -268,7 +276,7 @@ export async function delete_from_ingredient_management_table(
     await ensureConnected();
     const { rows, rowCount } = await client.query<{ id: number }>(
         `
-    DELETE FROM ingredients
+    UPDATE ingredients SET is_active=FALSE
     WHERE id = $1
     RETURNING id
     `,
@@ -319,6 +327,7 @@ export async function update_ingredient_management_table(
     name: string,
     stock: number,
     cost: number,
+    groupName: string,
 ): Promise<Ingredient> {
     await ensureConnected();
     const { rows, rowCount } = await client.query<Ingredient>(
@@ -326,11 +335,12 @@ export async function update_ingredient_management_table(
     UPDATE ingredients
        SET name = $2,
            stock = $3,
-           cost  = $4
+           cost  = $4,
+           ingredient_group = $5
      WHERE id = $1
-     RETURNING id, name, stock, cost::float8 AS cost
+     RETURNING id, name, stock, cost::float8 AS cost, ingredient_group
     `,
-        [id, name, stock, cost],
+        [id, name, stock, cost, groupName],
     );
 
     if (rowCount === 0) {
@@ -365,25 +375,55 @@ export async function remove_employee(id: number): Promise<Employee | null> {
 /**
  * Update an employee by id and return the updated row (or null).
  */
-export async function updateEmployee(
-    id: number,
-    newName: string,
-    newHoursWorked: number,
-    newPin: number,
-): Promise<Employee | null> {
-    await ensureConnected();
-    const { rows } = await client.query<Employee>(
-        `
-    UPDATE employees
-       SET name = $2,
-           hours_worked = $3,
-           pin = $4
-     WHERE id = $1
-     RETURNING *
-    `,
-        [id, newName, newHoursWorked, newPin],
+export async function updateEmployee(args: {
+    id: number;
+    name: string;
+    hours_worked: number;
+    pin: number;
+    is_manager: boolean;
+}): Promise<Employee> {
+    const { id, name, hours_worked, pin, is_manager } = args;
+
+    const result = await client.query<Employee>(
+        `UPDATE employees
+         SET name = $1,
+             hours_worked = $2,
+             pin = $3,
+             is_manager = $4
+         WHERE id = $5
+         RETURNING id, name, hours_worked, pin, is_manager`,
+        [name, hours_worked, pin, is_manager, id],
     );
-    return rows.length === 0 ? null : rows[0];
+
+    return result.rows[0];
+}
+
+export async function createEmployee(args: {
+    name: string;
+    hours_worked: number;
+    pin: number;
+    is_manager: boolean;
+}): Promise<Employee> {
+    const { name, hours_worked, pin, is_manager } = args;
+
+    const result = await client.query<Employee>(
+        `INSERT INTO employees (name, hours_worked, pin, is_manager)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, name, hours_worked, pin, is_manager`,
+        [name, hours_worked, pin, is_manager],
+    );
+
+    return result.rows[0];
+}
+
+export async function deleteEmployee(id: number) {
+    await client.query(
+        `
+        DELETE FROM employees
+        WHERE id = $1
+        `,
+        [id],
+    );
 }
 
 export async function fetch_categories(): Promise<Category[]> {
@@ -399,7 +439,7 @@ export async function fetch_menu_by_category(
 ): Promise<MenuItem[]> {
     await ensureConnected();
     const { rows } = await client.query<MenuItem>(
-        `SELECT id, name, category_id, stock, cost::float8 AS cost, image_url FROM menu WHERE category_id = $1 ORDER BY id`,
+        `SELECT id, name, category_id, stock, cost::float8 AS cost, image_url FROM menu WHERE category_id = $1 AND is_active = TRUE ORDER BY id`,
         [categoryId],
     );
     return rows;
@@ -414,25 +454,24 @@ export async function fetch_x_report(): Promise<XReportRow[]> {
     await ensureConnected();
 
     const query = `
-    SELECT
-        EXTRACT(HOUR FROM placed_at AT TIME ZONE 'America/Chicago') AS sale_hour,
-        COUNT(*) AS number_of_sales,
-        COALESCE(SUM(cost), 0) AS total_sales
-    FROM orders
-    WHERE
-        (placed_at AT TIME ZONE 'America/Chicago')::date =
-            (NOW() AT TIME ZONE 'America/Chicago')::date
-
-        AND EXTRACT(HOUR FROM placed_at AT TIME ZONE 'America/Chicago') <
-            EXTRACT(HOUR FROM NOW() AT TIME ZONE 'America/Chicago')
-    GROUP BY 1
-    ORDER BY 1;
+        SELECT
+            EXTRACT(HOUR FROM placed_at AT TIME ZONE 'America/Chicago') AS sale_hour,
+            COUNT(*) AS number_of_sales,
+            COALESCE(SUM(cost), 0) AS total_sales
+        FROM orders
+        WHERE 
+            placed_at >= date_trunc('day', NOW() AT TIME ZONE 'America/Chicago')
+            AND placed_at < date_trunc('hour', NOW() AT TIME ZONE 'America/Chicago')
+        GROUP BY 1
+        ORDER BY 1;
     `;
 
     const { rows } = await client.query(query);
 
     return rows.map((r: any) => ({
-        hour: `${String(r.sale_hour).padStart(2, "0")}:00 - ${String(r.sale_hour).padStart(2, "0")}:59`,
+        hour: `${String(r.sale_hour).padStart(2, "0")}:00 - ${String(
+            r.sale_hour,
+        ).padStart(2, "0")}:59`,
         number_of_sales: Number(r.number_of_sales),
         total_sales: Number(r.total_sales),
     }));
@@ -445,69 +484,63 @@ export async function fetch_x_report(): Promise<XReportRow[]> {
 export async function fetch_z_report(): Promise<ZReportRow[]> {
     await ensureConnected();
 
-    const totalSales = (
-        await client.query<{ total: number }>(`
-        SELECT COALESCE(SUM(cost), 0)::float8 AS total
+    // Define yesterday bounds once, use everywhere
+    const yesterdayStart = `
+        date_trunc('day', CURRENT_DATE - INTERVAL '1 day')
+    `;
+    const yesterdayEnd = `
+        date_trunc('day', CURRENT_DATE)
+    `;
+
+    // Combined totals (cash, card, mobile, total)
+    const totalsQuery = `
+        SELECT
+            COALESCE(SUM(cost), 0)::float8 AS total_sales,
+            COALESCE(SUM(cost) FILTER (WHERE payment_method = 'CASH'), 0)::float8 AS cash,
+            COALESCE(SUM(cost) FILTER (WHERE payment_method = 'CARD'), 0)::float8 AS card,
+            COALESCE(SUM(cost) FILTER (WHERE payment_method = 'MOBILE'), 0)::float8 AS mobile
         FROM orders
-        WHERE placed_at::date = (CURRENT_DATE - INTERVAL '1 day')
-    `)
-    ).rows[0].total;
+        WHERE placed_at >= ${yesterdayStart}
+          AND placed_at < ${yesterdayEnd};
+    `;
+
+    const totals = (await client.query(totalsQuery)).rows[0];
+
+    const totalSales = totals.total_sales;
+    const cash = totals.cash;
+    const card = totals.card;
+    const mobile = totals.mobile;
 
     const salesTax = totalSales * 0.0825;
-
-    const cash = (
-        await client.query<{ total: number }>(`
-        SELECT COALESCE(SUM(cost), 0)::float8 AS total
-        FROM orders
-        WHERE placed_at::date = (CURRENT_DATE - INTERVAL '1 day')
-        AND payment_method = 'CASH'
-    `)
-    ).rows[0].total;
-
-    const card = (
-        await client.query<{ total: number }>(`
-        SELECT COALESCE(SUM(cost), 0)::float8 AS total
-        FROM orders
-        WHERE placed_at::date = (CURRENT_DATE - INTERVAL '1 day')
-        AND payment_method = 'CARD'
-    `)
-    ).rows[0].total;
-
-    const mobile = (
-        await client.query<{ total: number }>(`
-        SELECT COALESCE(SUM(cost), 0)::float8 AS total
-        FROM orders
-        WHERE placed_at::date = (CURRENT_DATE - INTERVAL '1 day')
-        AND payment_method = 'MOBILE'
-    `)
-    ).rows[0].total;
-
     const cardFees = card * 0.02;
     const revenue = totalSales - salesTax - cardFees;
 
-    const openingEmployee =
-        (
-            await client.query<{ name: string }>(`
+    // Opening employee and closing employee queries
+    const openingEmployeeQuery = `
         SELECT e.name
         FROM employees e
         JOIN orders o ON e.id = o.employee_id
-        WHERE o.placed_at::date = (CURRENT_DATE - INTERVAL '1 day')
-        ORDER BY o.placed_at ASC, e.id ASC
-        LIMIT 1
-    `)
-        ).rows[0]?.name ?? "N/A";
+        WHERE o.placed_at >= ${yesterdayStart}
+          AND o.placed_at < ${yesterdayEnd}
+        ORDER BY o.placed_at ASC
+        LIMIT 1;
+    `;
+
+    const closingEmployeeQuery = `
+        SELECT e.name
+        FROM employees e
+        JOIN orders o ON e.id = o.employee_id
+        WHERE o.placed_at >= ${yesterdayStart}
+          AND o.placed_at < ${yesterdayEnd}
+        ORDER BY o.placed_at DESC
+        LIMIT 1;
+    `;
+
+    const openingEmployee =
+        (await client.query(openingEmployeeQuery)).rows[0]?.name ?? "N/A";
 
     const closingEmployee =
-        (
-            await client.query<{ name: string }>(`
-        SELECT e.name
-        FROM employees e
-        JOIN orders o ON e.id = o.employee_id
-        WHERE o.placed_at::date = (CURRENT_DATE - INTERVAL '1 day')
-        ORDER BY o.placed_at DESC, e.id ASC
-        LIMIT 1
-    `)
-        ).rows[0]?.name ?? "N/A";
+        (await client.query(closingEmployeeQuery)).rows[0]?.name ?? "N/A";
 
     const toMoney = (n: number) => `$${n.toFixed(2)}`;
 
@@ -762,6 +795,23 @@ export async function createOrder({
             }
         }
 
+        let finalUserId: number | null = null;
+
+        if (userId != null) {
+            const checkUser = (await client.query(
+                `SELECT id FROM users WHERE id = $1`,
+                [userId],
+            )) as any;
+
+            if (checkUser.rowCount > 0) {
+                finalUserId = userId;
+            } else {
+                console.warn(
+                    `createOrder: user_id=${userId} not found in users, inserting NULL for guest order`,
+                );
+            }
+        }
+
         // Tax + final total, after discount
         const tax = subtotal * TAX_RATE;
         const total = subtotal + tax;
@@ -771,7 +821,7 @@ export async function createOrder({
                 `INSERT INTO orders (cost, employee_id, payment_method, user_id) 
                  VALUES ($1, $2, $3, $4) 
                  RETURNING id`,
-                [total, employeeId, paymentMethod, userId ?? null],
+                [total, employeeId, paymentMethod, finalUserId],
             )
         ).rows[0].id as number;
 
@@ -838,6 +888,31 @@ export async function createOrder({
         await client.query("ROLLBACK");
         throw e;
     }
+}
+
+export async function getFavoriteDrinkForUser(
+    userId: number,
+): Promise<number | null> {
+    await ensureConnected();
+
+    const res = await client.query(
+        `
+        SELECT d.menu_id, COUNT(*) AS times
+        FROM drinks_orders d
+        JOIN orders o ON o.id = d.order_id
+        WHERE o.user_id = $1
+        GROUP BY d.menu_id
+        ORDER BY times DESC
+        LIMIT 1
+        `,
+        [userId],
+    );
+
+    if (res.rows.length === 0) {
+        return null;
+    }
+
+    return Number(res.rows[0].menu_id);
 }
 
 export async function getMenuItemById(drinkId: number): Promise<MenuItem> {

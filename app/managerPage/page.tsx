@@ -8,6 +8,7 @@ import XZReports from "@/app/x_and_z_reports/page";
 import KitchenPage from "@/app//KitchenPage/page";
 import TopNav from "@/components/TopNav";
 import LogoutButton from "@/components/LogoutButton";
+import KitchenButton from "@/components/KitchenButton";
 
 export default function ManagerPage() {
     return (
@@ -26,7 +27,6 @@ export default function ManagerPage() {
                     <TabsTrigger value="xz_reports">
                         X and Z Reports
                     </TabsTrigger>
-                    <TabsTrigger value="kitchenpage">Kitchen Page</TabsTrigger>
                 </TabsList>
 
                 {/* ───── TAB CONTENTS ───── */}
@@ -50,11 +50,8 @@ export default function ManagerPage() {
                 <TabsContent value="xz_reports" className="pt-4">
                     <XZReports />
                 </TabsContent>
-
-                <TabsContent value="kitchenpage" className="pt-4">
-                    <KitchenPage />
-                </TabsContent>
             </Tabs>
+            <KitchenButton />
             <LogoutButton />
         </div>
     );

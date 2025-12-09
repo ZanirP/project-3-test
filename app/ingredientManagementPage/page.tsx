@@ -95,6 +95,7 @@ export default function MenuManagerPage() {
         name: "",
         stock: "0",
         cost: "0",
+        groupName: "Toppings",
     });
 
     const [submitting, setSubmitting] = useState(false);
@@ -115,6 +116,7 @@ export default function MenuManagerPage() {
         name: "",
         stock: "0",
         cost: "0",
+        groupName: "Toppings",
     });
 
     const fetchMenu = async () => {
@@ -150,7 +152,7 @@ export default function MenuManagerPage() {
 
     // trigger dialog to open by changing the addOpen to true which causes UI to refresh dialog component.
     const openAddDialog = () => {
-        setForm({ name: "", stock: "0", cost: "0" });
+        setForm({ name: "", stock: "0", cost: "0", groupName: "Toppings" });
         setFormError(null);
         setAddOpen(true);
     };
@@ -178,6 +180,8 @@ export default function MenuManagerPage() {
             return;
         }
 
+        const groupStr = form.groupName;
+
         // now lets post to API that will add to database
         try {
             setSubmitting(true);
@@ -187,6 +191,7 @@ export default function MenuManagerPage() {
                 name: form.name.trim(),
                 stock: stockNum,
                 cost: costNum,
+                groupName: groupStr.trim(),
             };
 
             const res = await fetch("/api/ingredient", {
@@ -267,6 +272,7 @@ export default function MenuManagerPage() {
             name: row.name,
             stock: String(row.stock ?? 0),
             cost: String(row.cost ?? 0),
+            groupName: String(row.ingredient_group ?? "Toppings"),
         });
         setEditOpen(true);
     };
@@ -285,6 +291,10 @@ export default function MenuManagerPage() {
             setEditError("Name is required.");
             return;
         }
+        if (!editForm.groupName.trim()) {
+            setEditError("Group name is required.");
+            return;
+        }
         const stockNum = Number(editForm.stock);
         const costNum = Number(editForm.cost);
         if (!Number.isFinite(stockNum) || stockNum < 0) {
@@ -296,6 +306,8 @@ export default function MenuManagerPage() {
             return;
         }
 
+        const groupStr = editForm.groupName;
+
         // now lets post to API that will add to database
         try {
             setEditSubmitting(true);
@@ -306,6 +318,7 @@ export default function MenuManagerPage() {
                 name: editForm.name.trim(),
                 stock: stockNum,
                 cost: costNum,
+                groupName: groupStr,
             };
 
             const res = await fetch("/api/ingredient", {
@@ -373,6 +386,7 @@ export default function MenuManagerPage() {
                                 <Th>Name</Th>
                                 <Th>Stock</Th>
                                 <Th>Cost</Th>
+                                <Th>Group</Th>
                                 <Th>Edit Ingredient</Th>
                             </tr>
                         </thead>
@@ -396,6 +410,7 @@ export default function MenuManagerPage() {
                                         <Td>{r.name}</Td>
                                         <Td>{r.stock}</Td>
                                         <Td>${r.cost.toFixed(2)}</Td>
+                                        <Td>{r.ingredient_group}</Td>
                                         <Td>
                                             <button
                                                 onClick={() =>
@@ -468,7 +483,7 @@ export default function MenuManagerPage() {
                         </div>
                         <div>
                             <label className="block text-sm text-gray-700 mb-1">
-                                Cost *
+                                cost *
                             </label>
                             <input
                                 value={form.cost}
@@ -481,6 +496,21 @@ export default function MenuManagerPage() {
                                 required
                             />
                         </div>
+                    </div>
+                    <div>
+                        <label className="block text-sm text-gray-700 mb-1">
+                            ingredient group *
+                        </label>
+                        <input
+                            value={form.groupName}
+                            onChange={(e) =>
+                                setForm({ ...form, groupName: e.target.value })
+                            }
+                            className="w-full rounded-md border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-neutral-300"
+                            placeholder="e.g., 4.50"
+                            inputMode="decimal"
+                            required
+                        />
                     </div>
 
                     {formError && (
@@ -559,6 +589,7 @@ export default function MenuManagerPage() {
                 </form>
             </Dialog>
 
+            {/* EDIT ITEM DIALOG PANE */}
             <Dialog
                 open={editOpen}
                 onClose={() => setEditOpen(false)}
@@ -621,6 +652,23 @@ export default function MenuManagerPage() {
                                 required
                             />
                         </div>
+                    </div>
+                    <div>
+                        <label className="block text-sm text-gray-700 mb-1">
+                            ingredient group *
+                        </label>
+                        <input
+                            value={editForm.groupName}
+                            onChange={(e) =>
+                                setEditForm({
+                                    ...editForm,
+                                    groupName: e.target.value,
+                                })
+                            }
+                            className="w-full rounded-md border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-neutral-300"
+                            inputMode="decimal"
+                            required
+                        />
                     </div>
 
                     {editError && (

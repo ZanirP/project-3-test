@@ -75,6 +75,7 @@ interface CartItem {
         cost: number;
         amount: number;
     }[];
+    quantity: number;
 }
 
 type DrinkSize = "small" | "medium" | "large";
@@ -85,13 +86,14 @@ const LANGUAGES = [
     { code: "ar", label: "العربية" },
 ];
 
-type CurrencyCode = "USD" | "EUR" | "CAD" | "GBP";
+type CurrencyCode = "USD" | "EUR" | "CAD" | "GBP" | "MXN";
 
 const CURRENCIES = [
     { code: "USD", label: "USD - $", symbol: "$" },
     { code: "EUR", label: "EUR - €", symbol: "€" },
     { code: "CAD", label: "CAD - $", symbol: "$" },
     { code: "GBP", label: "GBP - £", symbol: "£" },
+    { code: "MXN", label: "MXN - $", symbol: "MX$" },
 ];
 
 const CURRENCY_SYMBOLS: Record<CurrencyCode, string> = {
@@ -99,6 +101,7 @@ const CURRENCY_SYMBOLS: Record<CurrencyCode, string> = {
     EUR: "€",
     CAD: "$",
     GBP: "£",
+    MXN: "MX$",
 };
 
 const LABEL_KEYS = [
@@ -170,9 +173,11 @@ function calculateSubtotal(cartItems: CartItem[]): number {
     let total = 0;
 
     for (const item of cartItems) {
-        for (const customization of item.customizations)
-            total += customization.cost;
-        total += item.cost;
+        let itemCost = item.cost;
+        for (const customization of item.customizations) {
+            itemCost += customization.cost;
+        }
+        total += itemCost * item.quantity;
     }
 
     return total;
@@ -319,20 +324,26 @@ function ToppingCard({
     onUnselect,
 }: InventoryItemCardProps) {
     const { isHighContrast } = useAccessibility();
-    let selected = isSelected;
+    const outOfStock = item.stock <= 0;
+
     return (
         <div
-            className={`flex-col items-center justify-center border rounded p-4 cursor-pointer ${
-                isHighContrast
-                    ? selected
-                        ? "text-blue-400"
-                        : ""
-                    : selected
-                      ? "bg-black text-white"
-                      : ""
-            }`}
+            className={`
+                flex-col items-center justify-center border rounded p-4
+                ${outOfStock ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}
+                ${
+                    isHighContrast
+                        ? isSelected && !outOfStock
+                            ? "text-blue-400"
+                            : ""
+                        : isSelected && !outOfStock
+                          ? "bg-black text-white"
+                          : ""
+                }
+            `}
             onClick={() => {
-                if (selected) {
+                if (outOfStock) return; // 🚫 do nothing
+                if (isSelected) {
                     onUnselect();
                 } else {
                     onSelect();
@@ -341,6 +352,11 @@ function ToppingCard({
         >
             <p className="text-center select-none">{item.name}</p>
             <p className="text-center select-none">(${item.cost})</p>
+            {outOfStock && (
+                <p className="mt-1 text-xs text-red-500 text-center">
+                    Out of stock
+                </p>
+            )}
         </div>
     );
 }
@@ -397,6 +413,7 @@ interface MenuItemCardProps {
     onConfirm: (item: CartItem) => void;
     addToOrderLabel: string;
     speak: (text: string) => void;
+    isFavorite: boolean;
 }
 
 const iceToPercentage = (servings: number): string => {
@@ -415,9 +432,11 @@ function MenuItemCard({
     onConfirm,
     addToOrderLabel,
     speak,
+    isFavorite,
 }: MenuItemCardProps) {
     const { isHighContrast, textMultipler } = useAccessibility();
 
+    const outOfStock = typeof item.stock === "number" && item.stock <= 0;
     const [open, setOpen] = useState(false);
 
     const [ice, setIce] = useState(4);
@@ -463,6 +482,35 @@ function MenuItemCard({
         }
     };
 
+    if (outOfStock) {
+        return (
+            <div
+                className={`
+                    relative flex flex-col gap-2 items-center p-2 rounded border
+                    opacity-40 cursor-not-allowed
+                    ${isHighContrast ? "bg-black text-white" : "bg-gray-100 text-black"}
+                `}
+            >
+                {item.image_url ? (
+                    <img
+                        src={item.image_url}
+                        alt={"drink image"}
+                        className="w-40 h-40 object-cover"
+                    />
+                ) : (
+                    <CupSoda width={120} height={120} />
+                )}
+                <span className="font-semibold text-center">{item.name}</span>
+                <span className="text-sm font-medium">
+                    ${item.cost.toFixed(2)}
+                </span>
+                <span className="mt-1 text-xs font-semibold text-red-500">
+                    Out of stock
+                </span>
+            </div>
+        );
+    }
+
     return (
         <Dialog open={open} onOpenChange={handleOpenChange}>
             <DialogTrigger asChild>
@@ -472,6 +520,12 @@ function MenuItemCard({
                     ${isHighContrast ? "text-white" : "text-black"}
                 `}
                 >
+                    {isFavorite && (
+                        <div className="absolute top-1 left-1 bg-yellow-400 text-black text-[0.65rem] font-semibold px-2 py-0.5 rounded-full shadow">
+                            ⭐ Favorite
+                        </div>
+                    )}
+
                     <button
                         type="button"
                         onClick={(e) => {
@@ -483,7 +537,7 @@ function MenuItemCard({
                         🔊
                     </button>
 
-                    {item.image_url !== "" && item.image_url !== null ? (
+                    {item.image_url ? (
                         <img
                             src={item.image_url}
                             alt={"drink image"}
@@ -529,7 +583,9 @@ function MenuItemCard({
                                                     key={`${sItem.id}${servings}`}
                                                     className={`cursor-pointer duration-300 border rounded-full p-4 text-xl ${
                                                         isSelected
-                                                            ? "bg-black text-white"
+                                                            ? isHighContrast
+                                                                ? "bg-black text-blue-500"
+                                                                : "bg-black text-white"
                                                             : ""
                                                     }`}
                                                     onClick={() => {
@@ -574,19 +630,6 @@ function MenuItemCard({
 
                     <div className="flex flex-col space-y-4">
                         {Array.from(globalToppingsGroups.keys()).map((key) => {
-                            if (key === "Toppings") {
-                                return (
-                                    <div key={key}>
-                                        <p className="text-2xl mb-3">{key}</p>
-                                        <ToppingSelector
-                                            globalToppings={selectedToppings}
-                                            onToppingSelect={setToppingsForType}
-                                            ingredientType={key}
-                                            multiSelect={true}
-                                        />
-                                    </div>
-                                );
-                            }
                             if (key === "Size") {
                                 return (
                                     <div key={key}>
@@ -639,6 +682,19 @@ function MenuItemCard({
                                                 L
                                             </div>
                                         </div>
+                                    </div>
+                                );
+                            }
+                            if (!(key === "Tea" || key === "Temperature")) {
+                                return (
+                                    <div key={key}>
+                                        <p className="text-2xl mb-3">{key}</p>
+                                        <ToppingSelector
+                                            globalToppings={selectedToppings}
+                                            onToppingSelect={setToppingsForType}
+                                            ingredientType={key}
+                                            multiSelect={true}
+                                        />
                                     </div>
                                 );
                             }
@@ -715,6 +771,7 @@ function MenuItemCard({
                                     cost: item.cost,
                                     scalars: scalarServings,
                                     customizations: allCustomizations,
+                                    quantity: 1,
                                 });
                             }}
                         >
@@ -734,6 +791,7 @@ interface MenuItemsInterface {
     title: string;
     addToOrderLabel: string;
     speak: (text: string) => void;
+    favoriteMenuId: number | null;
 }
 
 function MenuItems({
@@ -743,6 +801,7 @@ function MenuItems({
     title,
     addToOrderLabel,
     speak,
+    favoriteMenuId,
 }: MenuItemsInterface) {
     const { isHighContrast } = useAccessibility();
     return (
@@ -765,6 +824,7 @@ function MenuItems({
                                 onConfirm={onItemOrder}
                                 addToOrderLabel={addToOrderLabel}
                                 speak={speak}
+                                isFavorite={favoriteMenuId === item.id}
                             />
                         )),
                     )}
@@ -776,9 +836,13 @@ function MenuItems({
 function CartItemCard({
     item,
     onRemove,
+    onIncrease,
+    onDecrease,
 }: {
     item: CartItem;
     onRemove: () => void;
+    onIncrease: () => void;
+    onDecrease: () => void;
 }) {
     const { isHighContrast } = useAccessibility();
 
@@ -808,17 +872,50 @@ function CartItemCard({
             ))}
             <Separator className="my-4" />
             <div className="flex items-center justify-between">
-                <p>Total: ${calculateSubtotal([item])}</p>
-                <Button
-                    variant="outline"
-                    size="sm"
-                    className={
-                        isHighContrast ? "border-red-400 text-red-400" : ""
-                    }
-                    onClick={onRemove}
-                >
-                    Remove
-                </Button>
+                <div className="flex items-center gap-2">
+                    <Button
+                        variant="outline"
+                        size="icon"
+                        className={
+                            isHighContrast
+                                ? "border-red-400 border-4 text-black"
+                                : ""
+                        }
+                        onClick={onDecrease}
+                    >
+                        -
+                    </Button>
+                    <span className="min-w-[2rem] text-center">
+                        {item.quantity}
+                    </span>
+                    <Button
+                        variant="outline"
+                        size="icon"
+                        className={
+                            isHighContrast
+                                ? "border-green-400 border-4 text-black"
+                                : ""
+                        }
+                        onClick={onIncrease}
+                    >
+                        +
+                    </Button>
+                </div>
+                <div className="text-right">
+                    <p className="text-sm text-gray-500">
+                        ${calculateSubtotal([item]).toFixed(2)}
+                    </p>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className={
+                            isHighContrast ? "border-red-400 text-red-400" : ""
+                        }
+                        onClick={onRemove}
+                    >
+                        Remove
+                    </Button>
+                </div>
             </div>
         </div>
     );
@@ -840,195 +937,184 @@ interface TextReceipt {
 type ReceiptType = NoReceipt | EmailReceipt | TextReceipt;
 
 interface ReceiptSelectorProps {
+    isTriggerDisabled: boolean;
     onSubmit: (receiptType: ReceiptType) => void;
+    paymentMethod: "CARD" | "CASH";
+    setPaymentMethod: React.Dispatch<React.SetStateAction<"CARD" | "CASH">>;
 }
-function ReceiptSelector({ onSubmit }: ReceiptSelectorProps) {
+
+function ReceiptSelector({
+    isTriggerDisabled,
+    onSubmit,
+    paymentMethod,
+    setPaymentMethod,
+}: ReceiptSelectorProps) {
     const [selected, setSelected] = useState<string>("none");
     const [email, setEmail] = useState<string>("");
     const [phoneNumber, setPhoneNumber] = useState<string>("");
     const { isHighContrast, textMultipler } = useAccessibility();
 
     return (
-        <Dialog>
-            <DialogTrigger asChild>
+        <AlertDialog>
+            <AlertDialogTrigger asChild>
                 <Button
                     className={`w-full ${
                         isHighContrast ? "border-4 border-green-400" : ""
                     }`}
+                    disabled={isTriggerDisabled}
                 >
                     {EN_LABELS.checkout}
                 </Button>
-            </DialogTrigger>
+            </AlertDialogTrigger>
 
-            <DialogContent
+            <AlertDialogContent
                 className={`max-h-[90vh] ${
                     isHighContrast ? "text-white bg-black" : "text-black"
                 }`}
             >
-                <DialogHeader>
-                    <DialogTitle className={`text-center text-2xl`}>
+                <AlertDialogHeader>
+                    <AlertDialogTitle className={`text-center text-2xl`}>
                         {EN_LABELS.confirmOrder}
-                    </DialogTitle>
-                </DialogHeader>
+                    </AlertDialogTitle>
+                    <AlertDialogDescription>
+                        Select a payment method before completing the order.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
 
-                <div>
-                    <FieldGroup>
-                        <FieldSet>
-                            <FieldLabel>Receipt</FieldLabel>
-                            <FieldDescription>
-                                Choose how you'd like your receipt
-                            </FieldDescription>
-                            <RadioGroup
-                                value={selected}
-                                onValueChange={setSelected}
-                            >
-                                <FieldLabel
-                                    htmlFor="no-receipt-selector"
-                                    className={`border ${
-                                        isHighContrast
-                                            ? "border-primary"
-                                            : "border-secondary"
-                                    } ${
-                                        isHighContrast
-                                            ? "has-data-[state=checked]:border-secondary"
-                                            : "has-data-[state=checked]:border-primary"
-                                    }`}
-                                >
-                                    <Field orientation="horizontal">
-                                        <RadioGroupItem
-                                            value="none"
-                                            id="no-receipt-selector"
-                                            className={
-                                                isHighContrast
-                                                    ? "data-[state=checked]:bg-white"
-                                                    : ""
-                                            }
-                                        />
-                                        <FieldTitle>No receipt</FieldTitle>
-                                    </Field>
-                                </FieldLabel>
+                <div className="mt-4 space-y-4">
+                    <div>
+                        <label className="block text-sm mb-1 font-medium">
+                            Payment Method
+                        </label>
+                        <select
+                            value={paymentMethod}
+                            onChange={(e) =>
+                                setPaymentMethod(
+                                    e.target.value as "CARD" | "CASH",
+                                )
+                            }
+                            className="w-full border px-3 py-2 rounded-md bg-white text-black"
+                        >
+                            <option value="CARD">Card</option>
+                            <option value="CASH">Cash</option>
+                        </select>
+                    </div>
 
-                                <FieldLabel
-                                    htmlFor="email-receipt-selector"
-                                    className={`border ${
-                                        isHighContrast
-                                            ? "border-primary"
-                                            : "border-secondary"
-                                    } ${
-                                        isHighContrast
-                                            ? "has-data-[state=checked]:border-secondary"
-                                            : "has-data-[state=checked]:border-primary"
-                                    }`}
+                    <div>
+                        <FieldGroup>
+                            <FieldSet>
+                                <FieldLabel>Receipt</FieldLabel>
+                                <FieldDescription>
+                                    Choose how you'd like your receipt
+                                </FieldDescription>
+                                <RadioGroup
+                                    value={selected}
+                                    onValueChange={setSelected}
                                 >
-                                    <Field orientation="horizontal">
-                                        <RadioGroupItem
-                                            value="email"
-                                            id="email-receipt-selector"
-                                            className={
-                                                isHighContrast
-                                                    ? "data-[state=checked]:bg-white"
-                                                    : ""
-                                            }
-                                        />
-                                        <FieldContent>
-                                            <FieldTitle>Email</FieldTitle>
-                                            <FieldDescription>
-                                                <Input
-                                                    type="email"
-                                                    onFocus={() =>
-                                                        setSelected("email")
-                                                    }
-                                                    value={email}
-                                                    onChange={(e) =>
-                                                        setEmail(e.target.value)
-                                                    }
-                                                />
-                                            </FieldDescription>
-                                        </FieldContent>
-                                    </Field>
-                                </FieldLabel>
+                                    <FieldLabel
+                                        htmlFor="no-receipt-selector"
+                                        className={`border ${
+                                            isHighContrast
+                                                ? "border-primary"
+                                                : "border-secondary"
+                                        } ${
+                                            isHighContrast
+                                                ? "has-data-[state=checked]:border-secondary"
+                                                : "has-data-[state=checked]:border-primary"
+                                        }`}
+                                    >
+                                        <Field orientation="horizontal">
+                                            <RadioGroupItem
+                                                value="none"
+                                                id="no-receipt-selector"
+                                                className={
+                                                    isHighContrast
+                                                        ? "data-[state=checked]:bg-white"
+                                                        : ""
+                                                }
+                                            />
+                                            <FieldTitle>No receipt</FieldTitle>
+                                        </Field>
+                                    </FieldLabel>
 
-                                <FieldLabel
-                                    htmlFor="txtmsg-receipt-selector"
-                                    className={`border ${
-                                        isHighContrast
-                                            ? "border-primary"
-                                            : "border-secondary"
-                                    } ${
-                                        isHighContrast
-                                            ? "has-data-[state=checked]:border-secondary"
-                                            : "has-data-[state=checked]:border-primary"
-                                    }`}
-                                >
-                                    <Field orientation="horizontal">
-                                        <RadioGroupItem
-                                            value="text"
-                                            id="txtmsg-receipt-selector"
-                                            className={
-                                                isHighContrast
-                                                    ? "data-[state=checked]:bg-white"
-                                                    : ""
-                                            }
-                                        />
-                                        <FieldContent>
-                                            <FieldTitle>
-                                                Text Message
-                                            </FieldTitle>
-                                            <FieldDescription>
-                                                <Input
-                                                    type="tel"
-                                                    onFocus={() =>
-                                                        setSelected("text")
-                                                    }
-                                                    value={phoneNumber}
-                                                    onChange={(e) =>
-                                                        setPhoneNumber(
-                                                            e.target.value,
-                                                        )
-                                                    }
-                                                />
-                                            </FieldDescription>
-                                        </FieldContent>
-                                    </Field>
-                                </FieldLabel>
-                            </RadioGroup>
-                        </FieldSet>
-                    </FieldGroup>
+                                    <FieldLabel
+                                        htmlFor="email-receipt-selector"
+                                        className={`border ${
+                                            isHighContrast
+                                                ? "border-primary"
+                                                : "border-secondary"
+                                        } ${
+                                            isHighContrast
+                                                ? "has-data-[state=checked]:border-secondary"
+                                                : "has-data-[state=checked]:border-primary"
+                                        }`}
+                                    >
+                                        <Field orientation="horizontal">
+                                            <RadioGroupItem
+                                                value="email"
+                                                id="email-receipt-selector"
+                                                className={
+                                                    isHighContrast
+                                                        ? "data-[state=checked]:bg-white"
+                                                        : ""
+                                                }
+                                            />
+                                            <FieldContent>
+                                                <FieldTitle>Email</FieldTitle>
+                                                <FieldDescription>
+                                                    <Input
+                                                        type="email"
+                                                        onFocus={() =>
+                                                            setSelected("email")
+                                                        }
+                                                        value={email}
+                                                        onChange={(e) =>
+                                                            setEmail(
+                                                                e.target.value,
+                                                            )
+                                                        }
+                                                    />
+                                                </FieldDescription>
+                                            </FieldContent>
+                                        </Field>
+                                    </FieldLabel>
+                                </RadioGroup>
+                            </FieldSet>
+                        </FieldGroup>
+                    </div>
                 </div>
 
-                <DialogFooter>
-                    <DialogClose asChild>
-                        <Button
-                            variant="default"
-                            className={`w-full  ${
-                                isHighContrast
-                                    ? "border-4 border-green-400"
-                                    : ""
-                            }`}
-                            onClick={() => {
-                                switch (selected) {
-                                    case "none":
-                                        onSubmit({ kind: "none" });
-                                        return;
-                                    case "email":
-                                        onSubmit({ kind: "email", email });
-                                        return;
+                <AlertDialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                    <AlertDialogCancel className="w-full sm:w-auto">
+                        Cancel
+                    </AlertDialogCancel>
 
-                                    case "text":
-                                        onSubmit({
-                                            kind: "text",
-                                            phoneNumber,
-                                        });
-                                        return;
-                                }
-                            }}
-                        >
+                    <AlertDialogAction
+                        asChild
+                        className={`w-full sm:w-auto ${
+                            isHighContrast ? "border-4 border-green-400" : ""
+                        }`}
+                        onClick={() => {
+                            switch (selected) {
+                                case "none":
+                                    onSubmit({ kind: "none" });
+                                    break;
+                                case "email":
+                                    onSubmit({ kind: "email", email });
+                                    break;
+                                case "text":
+                                    onSubmit({ kind: "text", phoneNumber });
+                                    break;
+                            }
+                        }}
+                    >
+                        <Button variant="default" className="w-full sm:w-auto">
                             {EN_LABELS.yesPlaceOrder}
                         </Button>
-                    </DialogClose>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
     );
 }
 
@@ -1043,6 +1129,8 @@ function Cart({
     isLoggedIn,
     userId,
     setLoyaltyPoints,
+    paymentMethod,
+    setPaymentMethod,
 }: {
     items: CartItem[];
     setItems: React.Dispatch<React.SetStateAction<CartItem[]>>;
@@ -1054,51 +1142,51 @@ function Cart({
     isLoggedIn: boolean;
     userId: number | null;
     setLoyaltyPoints: React.Dispatch<React.SetStateAction<number>>;
+    paymentMethod: "CARD" | "CASH";
+    setPaymentMethod: React.Dispatch<React.SetStateAction<"CARD" | "CASH">>;
 }) {
     const { isHighContrast, textMultipler } = useAccessibility();
 
     const [useLoyalty, setUseLoyalty] = useState(false);
 
-    // Current cart value before any discounts
     const rawSubtotal = calculateSubtotal(items);
 
-    // Should we apply loyalty on this order?
     const shouldApplyLoyalty =
         isLoggedIn &&
         useLoyalty &&
         loyaltyPoints >= LOYALTY_POINTS_THRESHOLD &&
         items.length > 0;
 
-    // 50 points → up to $5 off, but not below zero
     const LOYALTY_DISCOUNT_VALUE = 5;
 
     const loyaltyDiscount = shouldApplyLoyalty
         ? Math.min(LOYALTY_DISCOUNT_VALUE, rawSubtotal)
         : 0;
 
-    // Subtotal after loyalty discount
     const subtotal = rawSubtotal - loyaltyDiscount;
 
-    // Tax and final total are computed on the discounted subtotal
     const tax = TAX_RATE * subtotal;
     const total = subtotal + tax;
 
     const handleRemoveCartItem = (index: number) => {
         setItems((prev) => prev.filter((_, i) => i !== index));
     };
+
     async function handleCheckout(receiptType: ReceiptType) {
         const res = await fetch("/api/customer/order", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                drinks: items.map((i) => ({
-                    id: i.id,
-                    customizations: i.customizations.map((c) => c.id),
-                    ice: 0,
-                    scalars: i.scalars,
-                })),
+                drinks: items.flatMap((i) =>
+                    Array.from({ length: i.quantity }, () => ({
+                        id: i.id,
+                        customizations: i.customizations.map((c) => c.id),
+                        ice: 0,
+                        scalars: i.scalars,
+                    })),
+                ),
                 employeeId: 1,
-                paymentMethod: "CARD",
+                paymentMethod: paymentMethod,
                 receiptType,
                 userId,
                 useLoyalty,
@@ -1110,7 +1198,6 @@ function Cart({
 
             setLoyaltyPoints((prev) => {
                 if (shouldApplyLoyalty) {
-                    // subtract 50 and add earned points
                     return prev - LOYALTY_POINTS_THRESHOLD + earnedPoints;
                 } else {
                     return prev + earnedPoints;
@@ -1124,7 +1211,11 @@ function Cart({
 
     return (
         <div
-            className={`grid grid-rows-[1fr_8fr_1fr] min-h-0 h-[850] gap-4 ${isHighContrast ? "bg-black text-white border-8 border-yellow-200" : ""}`}
+            className={`grid grid-rows-[1fr_8fr_1fr] min-h-0 h-[850] gap-4 ${
+                isHighContrast
+                    ? "bg-black text-white border-8 border-yellow-200"
+                    : ""
+            }`}
         >
             <p
                 className={`text-xl mb-4 text-center ${
@@ -1145,32 +1236,57 @@ function Cart({
             >
                 <div className="space-y-4">
                     {items.length === 0 ? (
-                        // empty state
-                        <p className="text-center text-sm text-gray-500">
+                        <p
+                            className={`text-center text-sm ${isHighContrast ? "text-white" : "text-gray-500"}`}
+                        >
                             Your cart is empty
                         </p>
                     ) : (
-                        // normal cart items
                         items.map((i, idx) => (
                             <CartItemCard
                                 key={idx}
                                 item={i}
                                 onRemove={() => handleRemoveCartItem(idx)}
+                                onIncrease={() =>
+                                    setItems((prev) =>
+                                        prev.map((it, j) =>
+                                            j === idx
+                                                ? {
+                                                      ...it,
+                                                      quantity: it.quantity + 1,
+                                                  }
+                                                : it,
+                                        ),
+                                    )
+                                }
+                                onDecrease={() =>
+                                    setItems((prev) =>
+                                        prev.flatMap((it, j) => {
+                                            if (j !== idx) return [it];
+                                            if (it.quantity <= 1) {
+                                                // if quantity would go below 1, remove the line
+                                                return [];
+                                            }
+                                            return [
+                                                {
+                                                    ...it,
+                                                    quantity: it.quantity - 1,
+                                                },
+                                            ];
+                                        }),
+                                    )
+                                }
                             />
                         ))
                     )}
-                    {/* {items.map((i, idx) => (
-                        <CartItemCard key={idx} item={i} />
-                    ))} */}
                 </div>
             </ScrollArea>
-
             <div
                 className={`p-4 border rounded space-y-2 ${
                     textMultipler >= 1.75 ? "text-sm" : "text-md"
                 } ${
                     isHighContrast
-                        ? "bg-black text-white border-4 border-blue-500"
+                        ? "bg-black text-white border-4 border-blue-500 [&_*]:text-white [&_option]:text-white"
                         : "bg-white text-black border"
                 }`}
             >
@@ -1201,7 +1317,7 @@ function Cart({
                         <div
                             className={`mt-2 p-2 rounded border text-sm ${
                                 isHighContrast
-                                    ? "bg-black text-white border-blue-400"
+                                    ? "bg-black text-white border-blue-400 [&_*]:text-white"
                                     : "bg-gray-50 text-black border-gray-300"
                             }`}
                         >
@@ -1214,11 +1330,10 @@ function Cart({
 
                             <Button
                                 variant={useLoyalty ? "default" : "outline"}
-                                className={`mt-2 w-full ${
-                                    isHighContrast && useLoyalty
-                                        ? "border-4 border-green-400"
-                                        : ""
-                                }`}
+                                className={`mt-2 w-full
+                                    ${isHighContrast ? "text-black disabled:opacity-100 disabled:text-gray-700" : ""}
+                                    ${isHighContrast && useLoyalty ? "border-4 border-green-400" : ""}
+                                `}
                                 disabled={
                                     !items.length ||
                                     loyaltyPoints < LOYALTY_POINTS_THRESHOLD
@@ -1234,19 +1349,29 @@ function Cart({
                                             loyaltyPoints
                                         } more points to redeem`}
                             </Button>
-
-                            <p className="mt-1 text-xs opacity-80">
+                            <p
+                                className={`mt-1 text-xs ${
+                                    isHighContrast
+                                        ? "text-white opacity-100"
+                                        : "opacity-80"
+                                }`}
+                            >
                                 Loyalty will be applied at checkout.
                             </p>
                         </div>
                     )}
 
-                    <ReceiptSelector onSubmit={handleCheckout} />
+                    <ReceiptSelector
+                        isTriggerDisabled={items.length === 0}
+                        onSubmit={handleCheckout}
+                        paymentMethod={paymentMethod}
+                        setPaymentMethod={setPaymentMethod}
+                    />
 
                     <select
                         className={`rounded border px-2 py-1 text-sm w-full ${
                             isHighContrast
-                                ? "bg-black text-white border-white"
+                                ? "bg-black text-white border-white [&_option]:bg-black [&_option]:text-white"
                                 : "bg-white text-black border-gray-300"
                         }`}
                         value={currency}
@@ -1280,6 +1405,8 @@ function CashierContent() {
         Object.keys(menuData).map((c) => [c, c]),
     );
 
+    const [paymentMethod, setPaymentMethod] = useState<"CARD" | "CASH">("CARD");
+
     const { speak } = useTextToSpeech("en-US");
     const { isHighContrast, textMultipler } = useAccessibility();
 
@@ -1288,7 +1415,8 @@ function CashierContent() {
         USD: 1,
     });
 
-    // single useSession call
+    const [favoriteMenuId, setFavoriteMenuId] = useState<number | null>(null);
+
     const { data: session, status } = useSession();
     const isLoggedIn = status === "authenticated";
     const rawLoyalty = (session?.user as any)?.loyaltyPoints;
@@ -1297,7 +1425,6 @@ function CashierContent() {
         rawLoyalty != null ? Number(rawLoyalty) : 0,
     );
 
-    // If the session changes, sync state from it
     useEffect(() => {
         if (rawLoyalty != null) {
             setLoyaltyPoints(Number(rawLoyalty));
@@ -1321,6 +1448,29 @@ function CashierContent() {
 
         fetchRate();
     }, [currency]);
+
+    useEffect(() => {
+        if (!isLoggedIn || !userId) {
+            setFavoriteMenuId(null);
+            return;
+        }
+
+        async function fetchFavorite() {
+            try {
+                const res = await fetch(
+                    `/api/customer/favoriteDrink?userId=${userId}`,
+                );
+                if (!res.ok) return;
+                const data = await res.json();
+                setFavoriteMenuId(data?.favoriteMenuId ?? null);
+            } catch (e) {
+                console.error("Failed to fetch favorite drink", e);
+            }
+        }
+
+        fetchFavorite();
+        // Re-fetch whenever loyalty points change (i.e., after successful orders)
+    }, [isLoggedIn, userId, loyaltyPoints]);
 
     const loadMenuData = async () => {
         setMenuDataReady(false);
@@ -1363,7 +1513,6 @@ function CashierContent() {
             );
         }
 
-        // reset globals
         scaleItems = [];
         globalToppingsGroups = new Map<string, Ingredient[]>();
 
@@ -1417,15 +1566,6 @@ function CashierContent() {
         <div className="min-h-screen bg-[#ffddd233] font-sans dark:bg-black flex flex-col text-white">
             <TopNav subtitle={labels.kioskTitle} variant="kiosk" />
 
-            {/* <div
-                className={`flex justify-end px-8 pt-4 gap-2 items-center ${
-                    isHighContrast ? "bg-black" : ""
-                }`}
-            >
-                <div className="inline-block">
-                    <GoogleTranslate />
-                </div>
-            </div> */}
             <div className="relative">
                 <div className="absolute top-4 right-8 z-50">
                     <GoogleTranslate />
@@ -1451,11 +1591,34 @@ function CashierContent() {
                             menuData={translatedMenuData}
                             selectedCategory={selectedCategory}
                             onItemOrder={(item) =>
-                                setCartItems([...cartItems, item])
+                                setCartItems((prev) => {
+                                    const idx = prev.findIndex(
+                                        (p) =>
+                                            p.id === item.id &&
+                                            JSON.stringify(p.customizations) ===
+                                                JSON.stringify(
+                                                    item.customizations,
+                                                ) &&
+                                            JSON.stringify(p.scalars) ===
+                                                JSON.stringify(item.scalars),
+                                    );
+
+                                    if (idx === -1) {
+                                        return [...prev, item]; // item already has quantity: 1
+                                    }
+
+                                    const copy = [...prev];
+                                    copy[idx] = {
+                                        ...copy[idx],
+                                        quantity: copy[idx].quantity + 1,
+                                    };
+                                    return copy;
+                                })
                             }
                             title={labels.drinks}
                             addToOrderLabel={labels.addToOrder}
                             speak={speak}
+                            favoriteMenuId={favoriteMenuId}
                         />
                         <Cart
                             items={cartItems}
@@ -1468,6 +1631,8 @@ function CashierContent() {
                             isLoggedIn={isLoggedIn}
                             userId={userId}
                             setLoyaltyPoints={setLoyaltyPoints}
+                            paymentMethod={paymentMethod}
+                            setPaymentMethod={setPaymentMethod}
                         />
                     </div>
                 ) : (
@@ -1495,6 +1660,8 @@ function CashierContent() {
                             isLoggedIn={isLoggedIn}
                             userId={userId}
                             setLoyaltyPoints={setLoyaltyPoints}
+                            paymentMethod={paymentMethod}
+                            setPaymentMethod={setPaymentMethod}
                         />
                     </div>
                 )}

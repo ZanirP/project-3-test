@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import type { Order, OrderStatus, MenuItem } from "@/lib/models";
+import LogoutButton from "@/components/LogoutButton";
 
 interface KitchenOrderCardProps {
     order: Order;
@@ -266,6 +267,7 @@ export default function KitchenPage() {
                     </div>
                 )}
             </main>
+            <LogoutButton />
         </div>
     );
 }

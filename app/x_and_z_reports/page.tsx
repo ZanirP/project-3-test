@@ -3,6 +3,8 @@ import { fetch_x_report, fetch_z_report } from "@/lib/db";
 import IdleLogout from "@/components/idleLogout";
 import React from "react";
 
+export const dynamic = "force-dynamic";
+
 function XReportTable({ title, rows }: { title: string; rows: XReportRow[] }) {
     return (
         <section style={{ marginBottom: 24 }}>
@@ -119,8 +121,10 @@ const actionButtonStyle: React.CSSProperties = {
 };
 
 export default async function XZReportsPage() {
+    const StartTime = new Date();
     const xRows = await fetch_x_report();
     const zRows = await fetch_z_report();
+    const EndTime = new Date();
     return (
         <main style={{ padding: 20 }}>
             <XReportTable title="X report" rows={xRows} />
